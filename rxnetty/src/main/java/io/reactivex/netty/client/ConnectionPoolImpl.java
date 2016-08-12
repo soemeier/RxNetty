@@ -20,8 +20,12 @@ import io.reactivex.netty.channel.ObservableConnection;
 import io.reactivex.netty.metrics.Clock;
 import io.reactivex.netty.metrics.MetricEventsListener;
 import io.reactivex.netty.metrics.MetricEventsSubject;
-import java.util.concurrent.Executors;
-import java.util.concurrent.ThreadFactory;
+import java.util.Iterator;
+import java.util.concurrent.ConcurrentLinkedQueue;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.ScheduledFuture;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReadWriteLock;
@@ -33,13 +37,6 @@ import rx.Subscriber;
 import rx.Subscription;
 import rx.functions.Action1;
 import rx.observers.Subscribers;
-
-import java.util.Iterator;
-import java.util.concurrent.ConcurrentLinkedQueue;
-import java.util.concurrent.ScheduledExecutorService;
-import java.util.concurrent.ScheduledFuture;
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
  * @author Nitesh Kant
@@ -249,13 +246,6 @@ public class ConnectionPoolImpl<I, O> implements ConnectionPool<I, O> {
         Observable.just(1L).subscribe(createShutdownAction());
     }
 
-    private void performShutdownIfRequested() {
-
-        if (isShutdownRequested.get()) {
-            performShutdownIfPossible();
-        }
-    }
-
     private Action1<Long> createShutdownAction() {
         return new Action1<Long>() {
             @Override
@@ -361,15 +351,6 @@ public class ConnectionPoolImpl<I, O> implements ConnectionPool<I, O> {
         );
     }
 
-    private void poolAlreadyClosed(PooledConnection<I, O> connection, long startTime, Subscriber<? super ObservableConnection<I, O>> subscriber) {
-
-        connection.closeUnderlyingChannel();
-        IllegalStateException exception = new IllegalStateException("Pool already shut down");
-        metricEventsSubject.onEvent(ClientMetricsEvent.POOL_ACQUIRE_FAILED,
-                Clock.onEndMillis(startTime), exception);
-        subscriber.onError(exception);
-    }
-
     @Override
     public Subscription subscribe(MetricEventsListener<? extends ClientMetricsEvent<?>> listener) {
         return metricEventsSubject.subscribe(listener);
@@ -403,24 +384,4 @@ public class ConnectionPoolImpl<I, O> implements ConnectionPool<I, O> {
         }
     }
 
-    private class ShutdownTask implements Runnable {
-
-        private final ScheduledExecutorService executorService;
-
-        public ShutdownTask(ScheduledExecutorService executorService) {
-
-            this.executorService = executorService;
-        }
-
-        @Override
-        public void run() {
-            if (isShutdownPerformed.get()) {
-                executorService.shutdown();
-            }
-            boolean shutdownIsDone = performShutdownIfPossible();
-            if (shutdownIsDone) {
-                executorService.shutdown();
-            }
-        }
-    }
 }
